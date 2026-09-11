@@ -21,6 +21,12 @@ phone browser  ──HTTPS/WSS──►  Cloudflare Tunnel  ──►  pc-remote
   keys, and the phone's own keyboard for typing.
 - **Reachable from anywhere** through a Cloudflare Tunnel — no port
   forwarding, no public IP. On the same Wi-Fi it offers a direct LAN link.
+- **No server, no account, nothing to sign up for.** There is no relay or
+  cloud service behind this project — the exe on your PC *is* the whole
+  thing, and it never phones home. Your screen goes from your PC to your
+  phone; on the LAN it doesn't leave your network at all. The only third
+  party is Cloudflare, and only if you choose the tunnel (you can use a VPN
+  or your own reverse proxy instead).
 
 It started as a way to glance at a PC that was busy — a long build, an
 assistant working through a task — and poke it now and then from the couch,
