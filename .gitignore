@@ -1,0 +1,14 @@
+# build output
+*.exe
+*.exe~
+
+# local state - never commit these
+config.json
+cloudflared-config.yml
+*.log
+*.err
+
+# scratch
+*.bin
+frame*.jpg
+*.bak*

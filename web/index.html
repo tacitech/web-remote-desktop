@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>PC Remote</title>
+<style>
+  :root {
+    --bar: #111827; --line: #1f2937; --fg: #e5e7eb; --accent: #3b82f6;
+    --bar-h: 46px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--fg);
+               font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+               overflow: hidden; overscroll-behavior: none; }
+  /* dvh tracks the phone's shrinking/growing URL bar; vh does not. */
+  body { height: 100dvh; }
+
+  #stage { position: absolute; inset: 0; bottom: calc(var(--bar-h) + var(--safe-b));
+           overflow: hidden; touch-action: none; }
+  body.bar-off #stage { bottom: 0; }   /* toolbar hidden: picture takes it all */
+  #screenv { position: absolute; transform-origin: 0 0; user-select: none; -webkit-user-drag: none;
+             background: #000; width: auto; height: auto; max-width: none; }
+
+  /* Virtual cursor: a ring you can see past your fingertip. */
+  #cursor { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+            border: 2px solid #fff; border-radius: 50%; pointer-events: none; z-index: 3;
+            box-shadow: 0 0 0 1px rgba(0,0,0,.7), 0 0 8px rgba(0,0,0,.6); }
+  #cursor::after { content: ''; position: absolute; inset: 8px; background: #fff; border-radius: 50%; }
+  /* Flash on click so a tap is never silent, even in direct mode. */
+  #cursor.hit { border-color: var(--accent); transform: scale(1.5); transition: transform .12s ease-out; }
+  #cursor.hit::after { background: var(--accent); }
+
+  /* Loupe: lives in the letterbox the desktop's aspect ratio leaves empty
+     (over 500px tall on a portrait phone, ~140px each side in landscape), so
+     it costs no picture area and shows what the fingertip is covering. */
+  #loupe { position: absolute; z-index: 5; display: none; border-radius: 10px;
+           border: 1px solid rgba(148,163,184,.45); background: #000;
+           box-shadow: 0 6px 20px rgba(0,0,0,.55); pointer-events: none; }
+  body.loupe-on #loupe { display: block; }
+
+  #dot { position: absolute; top: calc(8px + var(--safe-t)); right: calc(10px + var(--safe-r));
+         width: 10px; height: 10px; border-radius: 50%; z-index: 6; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+  #dot.live { background: #22c55e; }
+  #dot.connecting { background: #f59e0b; animation: blink 1s infinite; }
+  #dot.offline { background: #ef4444; }
+  /* Second dot: the control channel. The picture can be perfectly healthy
+     while input is dead, and those look the same without this. */
+  #dot2 { position: absolute; top: calc(8px + var(--safe-t)); right: calc(26px + var(--safe-r));
+          width: 10px; height: 10px; border-radius: 50%; z-index: 6;
+          box-shadow: 0 0 0 1px rgba(0,0,0,.6); background: #64748b; }
+  #dot2.ok { background: #22c55e; }
+  #dot2.slow { background: #f59e0b; }
+  #dot2.dead { background: #ef4444; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  #msg { position: absolute; top: calc(8px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+         background: rgba(0,0,0,.78); padding: 6px 12px; border-radius: 6px; font-size: 13px;
+         display: none; z-index: 6; max-width: 80vw; text-align: center; }
+
+  #bar { position: absolute; left: 0; right: 0; bottom: 0;
+         height: calc(var(--bar-h) + var(--safe-b));
+         padding: 0 calc(6px + var(--safe-r)) var(--safe-b) calc(6px + var(--safe-l));
+         display: flex; align-items: center; gap: 6px;
+         background: var(--bar); border-top: 1px solid var(--line);
+         overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+         scrollbar-width: none; }
+  #bar::-webkit-scrollbar { display: none; }
+  body.bar-off #bar { display: none; }
+
+  .btn { flex: 0 0 auto; min-width: 40px; height: 34px; padding: 0 11px; border-radius: 7px;
+         border: 1px solid var(--line); background: #1a2332; color: var(--fg);
+         font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .btn:active, .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sep { flex: 0 0 auto; width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+
+  .tray { position: absolute; left: 0; right: 0; bottom: calc(var(--bar-h) + var(--safe-b));
+          display: none; align-items: center; gap: 6px;
+          padding: 7px calc(6px + var(--safe-r)) 7px calc(6px + var(--safe-l));
+          background: rgba(17,24,39,.97); border-top: 1px solid var(--line);
+          overflow-x: auto; overflow-y: hidden; scrollbar-width: none; z-index: 6; }
+  .tray::-webkit-scrollbar { display: none; }
+  .tray.open { display: flex; }
+  body.bar-off .tray { display: none; }
+
+  /* Toggle stays reachable with the bar hidden. */
+  #barToggle { position: absolute; z-index: 7; right: calc(8px + var(--safe-r));
+               bottom: calc(var(--bar-h) + var(--safe-b) + 8px);
+               width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+               background: rgba(17,24,39,.85); color: var(--fg); font-size: 15px; line-height: 1; }
+  body.bar-off #barToggle { bottom: calc(10px + var(--safe-b)); }
+
+  /* Settings sheet */
+  #sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8;
+           background: var(--bar); border-top: 1px solid var(--line);
+           padding: 14px calc(14px + var(--safe-r)) calc(14px + var(--safe-b)) calc(14px + var(--safe-l));
+           transform: translateY(110%); transition: transform .22s ease-out;
+           max-height: 82dvh; overflow-y: auto; }
+  body.sheet-on #sheet { transform: translateY(0); }
+  body.sheet-on #shade { display: block; }
+  #shade { position: absolute; inset: 0; z-index: 7; background: rgba(0,0,0,.45); display: none; }
+  .row { margin-bottom: 12px; }
+  .row h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: .04em; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .opt { flex: 0 0 auto; min-width: 56px; height: 34px; padding: 0 12px; border-radius: 7px;
+         border: 1px solid var(--line); background: #1a2332; color: var(--fg);
+         font-size: 13px; font-weight: 600; }
+  .opt.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #sheetHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  #sheetHead b { font-size: 15px; }
+  #est { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  .lanlink { display: block; padding: 9px 11px; margin-top: 6px; border-radius: 7px;
+             border: 1px solid var(--line); background: #0f172a; color: #93c5fd;
+             font-size: 13px; text-decoration: none; word-break: break-all; }
+  .lanlink:active { background: var(--accent); color: #fff; }
+
+  /* Phone in landscape: vertical pixels are scarce, so slim the bar down. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    :root { --bar-h: 38px; }
+    .btn { height: 30px; padding: 0 9px; font-size: 12px; min-width: 36px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="screenv" muted playsinline autoplay></video>
+  <div id="cursor"></div>
+</div>
+<canvas id="loupe"></canvas>
+<div id="dot" class="connecting"></div>
+<div id="dot2" title="Control channel"></div>
+<div id="msg"></div>
+<div id="hidden" contenteditable="true" role="textbox" aria-label="Type here"
+     style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;overflow:hidden"
+     autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text"></div>
+<button id="barToggle" title="Show/hide toolbar">▾</button>
+<div id="bar">
+  <!-- Main row: only what gets used continuously, so it fits without scrolling.
+       Everything else lives one tap away in a tray. -->
+  <button class="btn" id="mode">👆 Direct</button>
+  <button class="btn" id="lclick">Click</button>
+  <button class="btn" id="mRight">Right</button>
+  <span class="sep"></span>
+  <button class="btn" id="trayKeys">⌨</button>
+  <button class="btn" id="trayView">👁</button>
+  <button class="btn" id="gear">⚙</button>
+</div>
+
+<!-- Keys tray: only relevant while typing. -->
+<div id="keysTray" class="tray">
+  <button class="btn" id="kbd">⌨ Keyboard</button>
+  <button class="btn" data-mod="ctrl">Ctrl</button>
+  <button class="btn" data-mod="alt">Alt</button>
+  <button class="btn" data-mod="shift">Shift</button>
+  <button class="btn" data-key="Enter">↵</button>
+  <button class="btn" data-key="Escape">Esc</button>
+  <button class="btn" data-key="Tab">Tab</button>
+  <button class="btn" data-key="Backspace">⌫</button>
+  <button class="btn" data-key="ArrowUp">↑</button>
+  <button class="btn" data-key="ArrowDown">↓</button>
+  <button class="btn" data-key="ArrowLeft">←</button>
+  <button class="btn" data-key="ArrowRight">→</button>
+</div>
+
+<!-- View tray: framing and pointer aids. -->
+<div id="viewTray" class="tray">
+  <button class="btn" id="fit">Fit</button>
+  <button class="btn" id="fitw">🔍 2x</button>
+  <button class="btn" id="loupeBtn">🔎 Loupe</button>
+  <button class="btn" id="dbl">Double</button>
+  <button class="btn" id="drag">Hold</button>
+</div>
+<div id="shade"></div>
+<div id="sheet">
+  <div id="sheetHead"><b>Picture settings</b><button class="btn" id="sheetClose">Done</button></div>
+  <div class="row" id="rowMonitor" style="display:none">
+    <h4>Display</h4><div class="opts" id="optMonitor"></div>
+  </div>
+  <div class="row">
+    <h4>Open over LAN (faster on the same Wi-Fi)</h4>
+    <div id="lanLinks"></div>
+    <div id="lanNote" style="font-size:12px;color:#94a3b8;margin-top:4px"></div>
+  </div>
+  <div class="row">
+    <h4>Codec</h4>
+    <div id="codecNote" style="font-size:12px;color:#94a3b8"></div>
+  </div>
+  <div class="row">
+    <h4>Resolution</h4>
+    <div class="opts" id="optSize">
+      <button class="opt" data-w="854">854</button>
+      <button class="opt" data-w="1280">1280</button>
+      <button class="opt" data-w="1600">1600</button>
+      <button class="opt" data-w="1920">1920</button>
+      <button class="opt" data-w="0">Native</button>
+    </div>
+  </div>
+  <div class="row">
+    <h4>Frame rate (fps)</h4>
+    <div class="opts" id="optFps">
+      <button class="opt" data-fps="3">3</button>
+      <button class="opt" data-fps="6">6</button>
+      <button class="opt" data-fps="10">10</button>
+      <button class="opt" data-fps="15">15</button>
+      <button class="opt" data-fps="24">24</button>
+    </div>
+  </div>
+  <div class="row">
+    <h4>Quality</h4>
+    <div class="opts" id="optQ">
+      <button class="opt" data-q="35">Low</button>
+      <button class="opt" data-q="55">Medium</button>
+      <button class="opt" data-q="70">High</button>
+      <button class="opt" data-q="88">Sharp</button>
+    </div>
+  </div>
+  <div class="row" style="margin-bottom:0">
+    <div class="opts">
+      <button class="opt" data-preset="data">📶 Save data</button>
+      <button class="opt" data-preset="balanced">⚖ Balanced</button>
+      <button class="opt" data-preset="sharp">✨ Sharpest</button>
+    </div>
+    <div id="est"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
