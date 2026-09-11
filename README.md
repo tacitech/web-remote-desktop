@@ -48,16 +48,32 @@ without setting up a full remote-desktop stack for a thirty-second look.
    build.bat
    ```
 
-2. Run `pc-remote.exe`. The first run writes `config.json` with a random
-   access code and logs the LAN address to `pc-remote.log`:
+2. Run `pc-remote.exe`. It runs hidden (no window). The first run creates
+   `config.json` next to the exe; **your access code is the `token` field in
+   that file**, generated randomly:
+
+   ```json
+   {
+     "addr": "127.0.0.1:7070",
+     "token": "k7x2m9pq4d",      <-- this is the code
+     ...
+   }
+   ```
+
+   `pc-remote.log` (also next to the exe) prints a ready-made link with the
+   code filled in — the values below are examples, yours will differ:
 
    ```
    [pc-remote] listening on :7070 | monitor=0 fps=12 q=65 maxw=1600
    [pc-remote] LAN: http://192.168.1.23:7070/?t=k7x2m9pq4d
    ```
 
-3. Open that address on your phone. The `?t=` code logs you in and sets a
-   cookie, so afterwards `http://192.168.1.23:7070/` on its own is enough.
+3. On your phone, open `http://<your-pc-ip>:7070/` and enter the code, or
+   open the link from the log directly. Either way a cookie is set, so from
+   then on the bare address is enough.
+
+   To change the code (and log every device out), edit `token` in
+   `config.json` and restart the exe.
 
 ## Remote access (Cloudflare Tunnel)
 
