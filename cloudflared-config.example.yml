@@ -1,0 +1,10 @@
+# Example Cloudflare Tunnel config — setup.bat generates the real one.
+# Copy to cloudflared-config.yml and fill in your tunnel ID and hostname
+# if you prefer to set the tunnel up by hand.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: C:\Users\<you>\.cloudflared\00000000-0000-0000-0000-000000000000.json
+
+ingress:
+  - hostname: pc.example.com
+    service: http://127.0.0.1:7070
+  - service: http_status:404
